@@ -6,7 +6,7 @@ const UserAccountModel = new mongose.Schema({
     required: true,
     unique: true,
   },
-  username: {
+  nickname: {
     type: String,
     required: true,
     unique: true,
