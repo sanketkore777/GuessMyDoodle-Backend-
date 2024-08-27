@@ -1,27 +1,24 @@
 const Router = require("express").Router();
-const admin = require("firebase-admin");
-
-var serviceAccount = require("../services/firebase");
-
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-});
+const User = require("../models/UserModel");
+const verifyIdToken = require("../services/firebase");
 
 Router.post("/authentication", async (req, res) => {
   const userToken = req.headers.authorization.split(" ")[1];
   try {
-    await verifyToken(userToken);
-    res.status(200).send({ message: "Authentication successful" });
+    const decodedToken = await verifyIdToken(userToken);
+    if (decodedToken.email) {
+      const user = await User.find({ email: decodedToken.email });
+      console.log(user);
+      if (user.length) {
+        res.status(200).send({ success: true, isSignedIn: true });
+      } else {
+        res.status(200).send({ success: true, isSignedIn: false });
+      }
+    }
   } catch (error) {
     console.log(error);
-    res.status(401).send({ message: "Authentication failed", error: error });
+    res.status(401).send({ success: false, message: "Authentication Failed!" });
   }
 });
-
-const verifyToken = async (idToken) => {
-  const decodedToken = await admin.auth().verifyIdToken(idToken);
-  const uid = decodedToken.uid;
-  // Proceed with your authentication logic, e.g., creating a session
-};
 
 module.exports = Router;
