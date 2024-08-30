@@ -31,83 +31,122 @@ const io = new Server(server, {
 
 connectToDatabase();
 
+// createRoom
+// roomCreateError
+// roomCreated
+
 const rooms = {};
 const userRooms = {};
 
 io.on("connection", (client) => {
+  // creating room
+
   client.on("createRoom", async (roomData) => {
     try {
       const decodedToken = await verifyIdToken(roomData.userIdToken);
-      const nickname = await getUserNickname(decodedToken, client);
-      if (!nickname) return;
+
+      let nickname;
+      if (
+        decodedToken.email &&
+        decodedToken.firebase.sign_in_provider === "google.com"
+      ) {
+        console.log("block 1");
+        let email = decodedToken.email;
+        const user = await User.find({ email });
+        if (user.length) {
+          nickname = user[0].nickname;
+        } else {
+          client.emit("roomCreateError", { message: "User account not found" });
+          return;
+        }
+      } else if (decodedToken.firebase.sign_in_provider === "anonymous") {
+        console.log("block 2");
+        nickname = ` Guest_${decodedToken.uid}`;
+      } else {
+        client.emit("roomCreateError", { message: "User account not found" });
+        return;
+      }
 
       const roomId = generateRoomId();
-      const newRoom = createRoom(
-        roomId,
-        roomData.roomName,
-        nickname,
-        roomData.isPrivate,
-        roomData.password
-      );
+      const newRoom = {
+        id: roomId,
+        name: roomData.roomName,
+        creator: nickname,
+        isPrivate: roomData.isPrivate,
+        password: roomData.password,
+        users: [],
+        drawings: [],
+      };
+
+      userRooms[client.id] = roomId;
+      newRoom.users.push(newRoom.creator);
+      // console.log(newRoom);
 
       rooms[roomId] = newRoom;
-      userRooms[client.id] = roomId;
-      newRoom.users.push({ id: client.id, nickname });
-
+      client.join(newRoom);
+      console.log(rooms);
       client.emit("roomCreated", newRoom);
-      console.log(
-        `${newRoom.creator} created Room: ${newRoom.name} with ID: ${newRoom.id}`
-      );
     } catch (error) {
-      console.error("Error in createRoom:", error);
-      client.emit("roomCreateError", {
-        message: "An error occurred while creating the room.",
-      });
+      console.error("Error", error);
+      client.emit("roomCreateError", { message: "Something went wrong" });
     }
   });
 
+  // Joining room
+
   client.on("joinRoom", async (joinData) => {
-    try {
-      const room = rooms[joinData.roomId];
-      if (!room) {
-        client.emit("roomJoinError", { message: "Room not found." });
+    const decodedToken = await verifyIdToken(joinData.userIdToken);
+    let nickname;
+
+    if (
+      decodedToken.email &&
+      decodedToken.firebase.sign_in_provider === "google.com"
+    ) {
+      let email = decodedToken.email;
+      const user = await User.find({ email });
+      if (user.length) {
+        nickname = user[0].nickname;
+      } else {
+        client.emit("roomJoinError", { message: "User account not found" });
         return;
       }
+    } else if (decodedToken.firebase.sign_in_provider === "anonymous") {
+      nickname = `Guest_${decodedToken.uid}`;
+    } else {
+      client.emit("roomJoinError", { message: "User account not found" });
+      return;
+    }
 
-      const decodedToken = await verifyIdToken(joinData.userIdToken);
-      const nickname = await getUserNickname(decodedToken, client);
-      if (!nickname) return;
-
+    const room = rooms[joinData.roomId];
+    if (room) {
       if (room.isPrivate && room.password !== joinData.password) {
         client.emit("roomJoinError", { message: "Incorrect password." });
         return;
-      }
-
-      if (room.users.length >= 6) {
+      } else if (room.users.length > 6) {
         client.emit("roomJoinError", { message: "Room is full" });
         return;
       }
 
       client.join(joinData.roomId);
       userRooms[client.id] = joinData.roomId;
-      room.users.push({ id: client.id, nickname });
-
+      console.log(room.users, "ROOM USERS --- 1");
+      if (!room.users.includes(nickname)) {
+        room.users.push(nickname);
+      }
+      console.log(room.users, "ROOM USERS --- 1");
       client.emit("roomJoined", room);
       client.broadcast.to(joinData.roomId).emit("userJoined", {
-        message: `A user with id ${client.id} has joined the room.`,
+        message: ` A user with id ${client.id} has joined the room`,
       });
 
-      if (room.users.length === 6) {
-        io.to(joinData.roomId).emit("start-game", {
+      if (room.users.length === 2) {
+        client.emit("start-game", {
           roomId: joinData.roomId,
           message: "Game started",
         });
       }
-    } catch (error) {
-      console.error("Error in joinRoom:", error);
-      client.emit("roomJoinError", {
-        message: "An error occurred while joining the room.",
-      });
+    } else {
+      client.emit("roomJoinError", { message: "Room not found." });
     }
   });
 
@@ -143,50 +182,18 @@ io.on("connection", (client) => {
     const roomId = userRooms[client.id];
     if (roomId && rooms[roomId]) {
       rooms[roomId].users = rooms[roomId].users.filter(
-        (user) => user.id !== client.id
+        (userId) => userId !== client.id
       );
       client.broadcast.to(roomId).emit("userLeft", {
         message: `A user with id ${client.id} has left the room.`,
       });
-      if (rooms[roomId].users.length === 0) {
-        delete rooms[roomId];
-      }
     }
     delete userRooms[client.id];
   });
 });
 
-async function getUserNickname(decodedToken, client) {
-  let nickname;
-  if (decodedToken.email) {
-    const user = await User.findOne({ email: decodedToken.email });
-    if (user) {
-      nickname = user.nickname;
-    } else {
-      client.emit("roomJoinError", { message: "User account not found" });
-    }
-  } else if (decodedToken.provider_id === "anonymous") {
-    nickname = `Guest_${decodedToken.uid}`;
-  } else {
-    client.emit("roomJoinError", { message: "User account not found" });
-  }
-  return nickname;
-}
-
-function createRoom(id, name, creator, isPrivate, password) {
-  return {
-    id,
-    name,
-    creator,
-    isPrivate,
-    password,
-    users: [],
-    drawings: [],
-  };
-}
-
 function generateRoomId() {
-  return Math.random().toString(36).substr(2, 9);
+  return crypto.randomUUID();
 }
 
 app.use("/auth", auth);
