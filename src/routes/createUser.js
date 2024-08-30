@@ -14,7 +14,7 @@ Router.post("/newuser", async (req, res) => {
       // Verify the Firebase ID token
       const decodedToken = await verifyIdToken(reqToken);
       const email = decodedToken.email;
-
+      console.log(decodedToken);
       if (email) {
         // Check if the user already exists
         const existingUser = await User.findOne({ email });

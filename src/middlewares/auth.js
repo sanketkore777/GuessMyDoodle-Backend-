@@ -1,4 +1,4 @@
-import firebaseAdmin from "../services/firebase.mjs";
+import firebaseAdmin from "../services/firebase.js";
 
 export default async function (req, res, next) {
   try {

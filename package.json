@@ -16,6 +16,8 @@
     "express": "^4.19.2",
     "firebase-admin": "^12.4.0",
     "mongoose": "^8.5.4",
-    "socket.io": "^4.7.5"
+    "random-words": "^2.0.1",
+    "socket.io": "^4.7.5",
+    "unique-names-generator": "^4.7.1"
   }
 }

@@ -6,14 +6,20 @@ Router.post("/authentication", async (req, res) => {
   const userToken = req.headers.authorization.split(" ")[1];
   try {
     const decodedToken = await verifyIdToken(userToken);
-    if (decodedToken.email) {
-      const user = await User.find({ email: decodedToken.email });
-      console.log(user);
-      if (user.length) {
-        res.status(200).send({ success: true, isSignedIn: true });
+    console.log(decodedToken, "TOKEN ----");
+    if (decodedToken?.uid) {
+      if (decodedToken.email) {
+        const user = await User.find({ email: decodedToken.email });
+        if (user.length) {
+          res.status(200).send({ success: true, isSignedIn: true });
+        } else {
+          res.status(200).send({ success: true, isSignedIn: false });
+        }
       } else {
         res.status(200).send({ success: true, isSignedIn: false });
       }
+    } else {
+      res.status(401).json({ success: false, message: "INVALID TOKEN!" });
     }
   } catch (error) {
     console.log(error);
