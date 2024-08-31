@@ -44,8 +44,8 @@ io.on("connection", (client) => {
   client.on("createRoom", async (roomData) => {
     try {
       const decodedToken = await verifyIdToken(roomData.userIdToken);
-
       let nickname;
+      let userAuthkey = decodedToken.uid;
       if (
         decodedToken.email &&
         decodedToken.firebase.sign_in_provider === "google.com"
@@ -75,17 +75,29 @@ io.on("connection", (client) => {
         isPrivate: roomData.isPrivate,
         password: roomData.password,
         users: [],
+        usersData: [],
         drawings: [],
       };
+      newRoom[userAuthkey] = nickname;
 
       userRooms[client.id] = roomId;
-      newRoom.users.push(newRoom.creator);
-      // console.log(newRoom);
+      let creatorData = {
+        nickname,
+        score: 0,
+        isTurnOver: false,
+      };
 
+      console.log(newRoom.users, "ROOM USERS --- ii", newRoom.usersData);
+      if (!newRoom.users.includes(nickname)) {
+        newRoom.users.push(nickname);
+        newRoom.usersData.push(creatorData);
+      }
+
+      console.log(newRoom.users, "ROOM USERS --- ii", newRoom.usersData);
       rooms[roomId] = newRoom;
-      client.join(newRoom);
+      // client.join(newRoom);
       console.log(rooms);
-      client.emit("roomCreated", newRoom);
+      client.emit("roomCreated", { id: newRoom.id });
     } catch (error) {
       console.error("Error", error);
       client.emit("roomCreateError", { message: "Something went wrong" });
@@ -98,6 +110,7 @@ io.on("connection", (client) => {
     const decodedToken = await verifyIdToken(joinData.userIdToken);
     let nickname;
 
+    let userAuthkey = decodedToken.uid;
     if (
       decodedToken.email &&
       decodedToken.firebase.sign_in_provider === "google.com"
@@ -127,26 +140,47 @@ io.on("connection", (client) => {
         return;
       }
 
+      room[userAuthkey] = nickname;
       client.join(joinData.roomId);
       userRooms[client.id] = joinData.roomId;
-      console.log(room.users, "ROOM USERS --- 1");
+      console.log(room.users, "ROOM USERS --- i", room.usersData);
+      let creatorData = {
+        nickname,
+        score: 0,
+        isTurnOver: false,
+      };
       if (!room.users.includes(nickname)) {
         room.users.push(nickname);
+        room.usersData.push(creatorData);
       }
-      console.log(room.users, "ROOM USERS --- 1");
-      client.emit("roomJoined", room);
+      console.log(room.users, "ROOM USERS --- ii", room.usersData);
+      client.emit("roomJoined", { roomId: room.id, userAuthkey });
       client.broadcast.to(joinData.roomId).emit("userJoined", {
         message: ` A user with id ${client.id} has joined the room`,
       });
 
       if (room.users.length === 2) {
-        client.emit("start-game", {
+        client.to(joinData.roomId).emit("start-game", {
           roomId: joinData.roomId,
           message: "Game started",
         });
       }
     } else {
       client.emit("roomJoinError", { message: "Room not found." });
+    }
+  });
+
+  client.on("message", ({ roomId, message, userAuthkey }) => {
+    console.log(message, "MESSAGE --- i");
+    if (rooms[roomId][userAuthkey]) {
+      client
+        .to(roomId)
+        .emit("recieve-message", {
+          roomId,
+          message,
+          nickname: rooms[roomId][userAuthkey],
+          timeStamp: Date.now(),
+        });
     }
   });
 
@@ -179,6 +213,7 @@ io.on("connection", (client) => {
   });
 
   client.on("disconnect", () => {
+    console.log("USER DISCONNECTED --- ", client.id);
     const roomId = userRooms[client.id];
     if (roomId && rooms[roomId]) {
       rooms[roomId].users = rooms[roomId].users.filter(
